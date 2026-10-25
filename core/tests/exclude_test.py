@@ -15,7 +15,6 @@ from core.exclude import ExcludeList, ExcludeDict, default_regexes, AlreadyThere
 
 from re import error
 
-
 # Two slightly different implementations here, one around a list of lists,
 # and another around a dictionary.
 
