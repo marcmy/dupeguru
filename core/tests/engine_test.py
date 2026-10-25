@@ -925,4 +925,3 @@ class TestCaseGetGroups:
         assert B in g1
         assert C in g2
         assert D in g2
-
