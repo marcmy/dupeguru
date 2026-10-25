@@ -4,9 +4,14 @@ name: Default CI/CD
 
 on:
   push:
+    branches: [master]
   pull_request:
     branches: [master]
   workflow_dispatch:
+
+# Avoid redundant push+PR runs on the same feature branch.
+permissions:
+  contents: read
 
 jobs:
   pre-commit:
