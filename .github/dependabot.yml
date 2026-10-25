@@ -7,16 +7,16 @@ updates:
       time: "12:00"
       timezone: "America/New_York"
     open-pull-requests-limit: 100
-    
   - package-ecosystem: pre-commit
     directory: /
+    schedule:
       interval: "daily"
       time: "12:00"
       timezone: "America/New_York"
     open-pull-requests-limit: 100
-    
   - package-ecosystem: github-actions
     directory: /
+    schedule:
       interval: "daily"
       time: "12:00"
       timezone: "America/New_York"
