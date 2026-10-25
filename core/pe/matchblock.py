@@ -177,7 +177,7 @@ def getmatches(pictures, cache_path, threshold, match_scaled=False, match_rotate
 
     def collect_results(collect_all=False):
         # collect results and wait until the queue is small enough to accomodate a new results.
-        nonlocal async_results, matches, comparison_count, comparisons_to_do
+        nonlocal matches, comparison_count, comparisons_to_do  # noqa: F824
         limit = 0 if collect_all else RESULTS_QUEUE_LIMIT
         while len(async_results) > limit:
             ready, working = extract(lambda r: r.ready(), async_results)

@@ -28,12 +28,10 @@ if sys.platform == "win32":
 else:
     from signal import signal, SIGINT, SIGTERM, SIGQUIT
 
-global dgapp
 dgapp = None
 
 
 def signal_handler(sig, frame):
-    global dgapp
     if dgapp is None:
         return
     if sig in (SIGINT, SIGTERM, SIGQUIT):
