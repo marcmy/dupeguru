@@ -8,6 +8,9 @@ on:
     paths:
       - locale/*.pot
 
+permissions:
+  contents: read
+
 env:
   TX_VERSION: "v1.6.10"
 
@@ -16,9 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Get Transifex Client
         run: |
-          curl -o- https://raw.githubusercontent.com/transifex/cli/master/install.sh | bash -s -- $TX_VERSION
+          curl -o- https://raw.githubusercontent.com/transifex/cli/2221ffcf3090939cace30bf0d7a971dd835c56a6/install.sh | bash -s -- $TX_VERSION
       - name: Update & Push Translation Sources
         env:
           TX_TOKEN: ${{ secrets.TX_TOKEN }}

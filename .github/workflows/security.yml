@@ -1,0 +1,82 @@
+name: Security checks
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  schedule:
+    - cron: "37 8 * * 1" # Weekly Monday audit (UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actions-security:
+    name: Audit GitHub Actions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout without persisting credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check pull request workflows
+        if: github.event_name == 'pull_request'
+        uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          version: v1.31.1
+          advanced-security: false
+          annotations: true
+          min-severity: medium
+          min-confidence: high
+      - name: Publish workflow security findings
+        if: github.event_name != 'pull_request'
+        uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          version: v1.31.1
+          min-severity: medium
+          min-confidence: high
+
+  secret-scan:
+    name: Scan introduced secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full commit history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check new commits for verified secrets
+        uses: trufflesecurity/trufflehog@31ce31ee1abbcc7dc8eee5764c17121c3044c8b2 # v3.99.7
+        with:
+          extra_args: --results=verified
+
+  python-audit:
+    name: Weekly Python dependency audit
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.15.1
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.15.1"
+      - name: Install pinned audit tool
+        run: python -m pip install --upgrade pip 'pip-audit==2.10.1'
+      - name: Audit complete Python requirements
+        run: python -m pip_audit -r requirements.txt -r requirements-extra.txt --progress-spinner off --format json --output pip-audit.json
+      - name: Upload machine-readable security report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-vulnerability-report
+          path: pip-audit.json
+          if-no-files-found: warn
+          retention-days: 30
