@@ -84,6 +84,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools
           python -m pip install -r requirements.txt "pyinstaller>=6.22.3,<7"
+      - name: Install Linux Qt bindings
+        if: runner.os == 'Linux'
+        run: python -m pip install "PyQt5>=5.15,<6"
       - name: Build application and distributable
         run: python scripts/build_ci_artifacts.py
       - name: Upload downloadable application
