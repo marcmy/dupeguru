@@ -533,6 +533,32 @@ class TestCaseGetMatches:
 
 
 class TestCaseGetMatchesByContents:
+    def test_only_matching_digests_are_paired(self):
+        files = [no(str(i), size=10) for i in range(100)]
+        files[0].digest_partial = files[1].digest_partial = "same partial"
+        files[0].digest = files[1].digest = "same content"
+        files[2].digest_partial = "same partial"
+        files[2].digest = "different content"
+        matches = getmatches_by_contents(files)
+        assert len(matches) == 1
+        assert {matches[0].first, matches[0].second} == {files[0], files[1]}
+
+    def test_empty_files_match_without_digests_but_reference_pairs_do_not(self):
+        files = [no(str(i), size=0) for i in range(3)]
+        files[0].is_ref = files[1].is_ref = True
+        for file in files:
+            file.digest_partial = None
+        matches = getmatches_by_contents(files)
+        assert len(matches) == 2
+        assert all(files[2] in (match.first, match.second) for match in matches)
+
+    def test_missing_digest_does_not_match(self):
+        files = [no(str(i), size=10) for i in range(3)]
+        for file in files:
+            file.digest_partial = "same partial"
+            file.digest = None
+        assert getmatches_by_contents(files) == []
+
     def test_big_file_partial_hashing(self):
         smallsize = 1
         bigsize = 100 * 1024 * 1024  # 100MB
