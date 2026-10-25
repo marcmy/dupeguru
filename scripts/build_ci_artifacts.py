@@ -8,7 +8,6 @@ import subprocess
 import sys
 import tarfile
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 OUTPUT = ROOT / "artifacts"
@@ -30,9 +29,7 @@ def sha256(path):
     with path.open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             checksum.update(chunk)
-    (path.parent / (path.name + ".sha256")).write_text(
-        f"{checksum.hexdigest()}  {path.name}\n", encoding="utf-8"
-    )
+    (path.parent / (path.name + ".sha256")).write_text(f"{checksum.hexdigest()}  {path.name}\n", encoding="utf-8")
 
 
 def main():
