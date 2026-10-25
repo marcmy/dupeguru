@@ -556,4 +556,3 @@ def get_groups(matches):
     if groups and orphan_matches:
         groups += get_groups(orphan_matches)  # no job, as it isn't supposed to take a long time
     return groups
-
