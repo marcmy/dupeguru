@@ -296,21 +296,34 @@ def getmatches_by_contents(files, bigsize=0, j=job.nulljob):
     j.start_job(len(possible_matches), PROGRESS_MESSAGE % (0, 0))
     group_count = 0
     for group in possible_matches:
-        for first, second in itertools.combinations(group, 2):
-            if first.is_ref and second.is_ref:
-                continue  # Don't spend time comparing two ref pics together.
-            if first.size == 0 and second.size == 0:
-                # skip hashing for zero length files
-                result.append(Match(first, second, 100))
-                continue
-            # if digests are the same (and not None) then files match
-            if first.digest_partial is not None and first.digest_partial == second.digest_partial:
-                if bigsize > 0 and first.size > bigsize:
-                    if first.digest_samples is not None and first.digest_samples == second.digest_samples:
-                        result.append(Match(first, second, 100))
-                else:
-                    if first.digest is not None and first.digest == second.digest:
-                        result.append(Match(first, second, 100))
+        if all(file.is_ref for file in group):
+            group_count += 1
+            j.add_progress(desc=PROGRESS_MESSAGE % (len(result), group_count))
+            continue
+        if next(iter(group)).size == 0:
+            matching_groups = [group]  # Empty files need no hashing.
+        else:
+            # Only files with the same partial hash can match. Grouping before
+            # computing the more expensive hash avoids hashing unique files.
+            partial_groups = defaultdict(list)
+            for file in group:
+                if file.digest_partial is not None:
+                    partial_groups[file.digest_partial].append(file)
+            matching_groups = []
+            digest_name = "digest_samples" if bigsize > 0 and next(iter(group)).size > bigsize else "digest"
+            for partial_group in partial_groups.values():
+                if len(partial_group) < 2:
+                    continue
+                digest_groups = defaultdict(list)
+                for file in partial_group:
+                    digest = getattr(file, digest_name)
+                    if digest is not None:
+                        digest_groups[digest].append(file)
+                matching_groups.extend(digest_group for digest_group in digest_groups.values() if len(digest_group) > 1)
+        for matching_group in matching_groups:
+            for first, second in itertools.combinations(matching_group, 2):
+                if not (first.is_ref and second.is_ref):
+                    result.append(Match(first, second, 100))
         group_count += 1
         j.add_progress(desc=PROGRESS_MESSAGE % (len(result), group_count))
     return result
@@ -543,3 +556,4 @@ def get_groups(matches):
     if groups and orphan_matches:
         groups += get_groups(orphan_matches)  # no job, as it isn't supposed to take a long time
     return groups
+
