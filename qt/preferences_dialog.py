@@ -133,23 +133,15 @@ class PreferencesDialogBase(QDialog):
             "tabs_default_pos",
             tr("Use default position for tab bar (requires restart)"),
         )
-        self.tabs_default_pos.setToolTip(
-            tr(
-                "Place the tab bar below the main menu instead of next to it\n\
-On MacOS, the tab bar will fill up the window's width instead."
-            )
-        )
+        self.tabs_default_pos.setToolTip(tr("Place the tab bar below the main menu instead of next to it\n\
+On MacOS, the tab bar will fill up the window's width instead."))
         layout.addWidget(self.tabs_default_pos)
         self._setupAddCheckbox(
             "use_native_dialogs",
             tr("Use native OS dialogs"),
         )
-        self.use_native_dialogs.setToolTip(
-            tr(
-                "For actions such as file/folder selection use the OS native dialogs.\n\
-Some native dialogs have limited functionality."
-            )
-        )
+        self.use_native_dialogs.setToolTip(tr("For actions such as file/folder selection use the OS native dialogs.\n\
+Some native dialogs have limited functionality."))
         layout.addWidget(self.use_native_dialogs)
         if plat.ISWINDOWS:
             self._setupAddCheckbox("use_dark_style", tr("Use dark style"))
@@ -188,10 +180,8 @@ Some native dialogs have limited functionality."
             tr("Show the title bar and can be docked"),
         )
         self.details_dialog_titlebar_enabled.setToolTip(
-            tr(
-                "While the title bar is hidden, \
-use the modifier key to drag the floating window around"
-            )
+            tr("While the title bar is hidden, \
+use the modifier key to drag the floating window around")
             if ISLINUX
             else tr("The title bar can only be disabled while the window is docked")
         )
@@ -217,10 +207,8 @@ use the modifier key to drag the floating window around"
 
     def _setup_advanced_page(self):
         tab_label = QLabel(
-            tr(
-                "These options are for advanced users or for very specific situations, \
-most users should not have to modify these."
-            ),
+            tr("These options are for advanced users or for very specific situations, \
+most users should not have to modify these."),
             wordWrap=True,
         )
         self.advanced_vlayout.addWidget(tab_label)
