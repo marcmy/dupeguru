@@ -31,7 +31,7 @@ jobs:
           version: v1.31.1
           advanced-security: false
           annotations: true
-          min-severity: medium
+          min-severity: high
           min-confidence: high
       - name: Publish workflow security findings
         if: github.event_name != 'pull_request'
