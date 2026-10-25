@@ -15,6 +15,23 @@ After installing python it is recommended to update setuptools before compiling 
 
 More details on setting up python for compiling packages on windows can be found on the [python wiki][pythonWindowsCompilers] Take note of the required vc++ versions.
 
+
+### PowerShell with Python 3.14 (Windows x64)
+
+From the repository root, create an isolated build environment:
+
+    py -3.14 -m venv .venv
+    .\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
+    .\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-extra.txt
+    .\.venv\Scripts\python.exe build.py
+
+For an installer, install NSIS first and then run:
+
+    .\.venv\Scripts\python.exe package.py
+
+The portable application is in dist/dupeguru-win64/ and the installer is
+in dist/dupeGuru_win64_<version>.exe. Python 3.14 needs PyInstaller 6.15+.
+
 ### With build.py (preferred)
 To build with a different python version 3.7 vs 3.8 or 32 bit vs 64 bit specify that version instead of -3.8 to the `py` command below.  If you want to build additional versions while keeping all virtual environments setup use a different location for each virtual environment.
 

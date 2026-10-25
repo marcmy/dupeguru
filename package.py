@@ -14,6 +14,7 @@ from argparse import ArgumentParser
 import platform
 import distro
 import re
+import subprocess
 
 from hscommon.build import (
     print_and_do,
@@ -187,12 +188,28 @@ def package_windows():
     )
     # remove version info file
     os.remove("win_version_info.txt")
-    # Call NSIS (TODO update to not use hardcoded path)
-    cmd = (
-        '"C:\\Program Files (x86)\\NSIS\\Bin\\makensis.exe" '
-        "/DVERSIONMAJOR={0} /DVERSIONMINOR={1} /DVERSIONPATCH={2} /DBITS={3} setup.nsi"
+    # Find NSIS through PATH or its standard Windows install locations.
+    nsis_executable = shutil.which("makensis") or shutil.which("makensis.exe")
+    if nsis_executable is None:
+        candidates = [
+            op.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "NSIS", "makensis.exe"),
+            op.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "NSIS", "makensis.exe"),
+        ]
+        nsis_executable = next((candidate for candidate in candidates if op.isfile(candidate)), None)
+    if nsis_executable is None:
+        raise FileNotFoundError("NSIS makensis.exe was not found; install NSIS to build the Windows installer.")
+
+    subprocess.run(
+        [
+            nsis_executable,
+            "/DVERSIONMAJOR={}".format(version_array[0]),
+            "/DVERSIONMINOR={}".format(version_array[1]),
+            "/DVERSIONPATCH={}".format(version_array[2]),
+            "/DBITS={}".format(bits),
+            "setup.nsi",
+        ],
+        check=True,
     )
-    print_and_do(cmd.format(version_array[0], version_array[1], version_array[2], bits))
 
 
 def package_macos():
