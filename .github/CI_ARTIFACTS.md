@@ -1,6 +1,6 @@
 # Downloadable CI builds
 
-The [Build artifacts](../../actions/workflows/build-artifacts.yml) workflow produces
+The [Build artifacts](https://github.com/marcmy/dupeguru/actions/workflows/build-artifacts.yml) workflow produces
 ready-to-extract preview builds on **Python 3.15.1** for these platforms:
 
 | Runner | Artifact | Contents |
