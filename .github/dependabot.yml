@@ -6,8 +6,6 @@ updates:
       interval: "daily"
       time: "12:00"
       timezone: "America/New_York"
-    cooldown:
-      default-days: 7
     open-pull-requests-limit: 100
   - package-ecosystem: pre-commit
     directory: /
@@ -15,8 +13,6 @@ updates:
       interval: "daily"
       time: "12:00"
       timezone: "America/New_York"
-    cooldown:
-      default-days: 7
     open-pull-requests-limit: 100
   - package-ecosystem: github-actions
     directory: /
@@ -24,8 +20,6 @@ updates:
       interval: "daily"
       time: "12:00"
       timezone: "America/New_York"
-    cooldown:
-      default-days: 7
     open-pull-requests-limit: 100
     groups:
       codeql-action:
