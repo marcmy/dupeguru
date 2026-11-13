@@ -24,7 +24,9 @@ from hscommon.jobprogress import job
 ) = range(3)
 
 JOB_REFRESH_RATE = 100
-PROGRESS_MESSAGE = tr("%d matches found from %d groups")
+# Counts distinct files that matched at least one other file, which is what the results show.
+# Counting match pairs instead grows quadratically with the number of copies of a file.
+PROGRESS_MESSAGE = tr("%d matching files found")
 
 
 def getwords(s):
@@ -249,11 +251,11 @@ def getmatches(
         match_flags.append(MATCH_SIMILAR_WORDS)
     if no_field_order:
         match_flags.append(NO_FIELD_ORDER)
-    j.start_job(len(word_dict), PROGRESS_MESSAGE % (0, 0))
+    j.start_job(len(word_dict), PROGRESS_MESSAGE % 0)
     compared = defaultdict(set)
+    matched_files = set()
     result = []
     try:
-        word_count = 0
         # This whole 'popping' thing is there to avoid taking too much memory at the same time.
         while word_dict:
             items = word_dict.popitem()[1]
@@ -266,10 +268,11 @@ def getmatches(
                     m = get_match(ref, other, match_flags)
                     if m.percentage >= min_match_percentage:
                         result.append(m)
+                        matched_files.add(ref)
+                        matched_files.add(other)
                         if len(result) >= LIMIT:
                             return result
-            word_count += 1
-            j.add_progress(desc=PROGRESS_MESSAGE % (len(result), word_count))
+            j.add_progress(desc=PROGRESS_MESSAGE % len(matched_files))
     except MemoryError:
         # This is the place where the memory usage is at its peak during the scan.
         # Just continue the process with an incomplete list of matches.
@@ -293,12 +296,11 @@ def getmatches_by_contents(files, bigsize=0, j=job.nulljob):
     possible_matches = [files for files in size2files.values() if len(files) > 1]
     del size2files
     result = []
-    j.start_job(len(possible_matches), PROGRESS_MESSAGE % (0, 0))
-    group_count = 0
+    j.start_job(len(possible_matches), PROGRESS_MESSAGE % 0)
+    matched_file_count = 0
     for group in possible_matches:
         if all(file.is_ref for file in group):
-            group_count += 1
-            j.add_progress(desc=PROGRESS_MESSAGE % (len(result), group_count))
+            j.add_progress(desc=PROGRESS_MESSAGE % matched_file_count)
             continue
         if next(iter(group)).size == 0:
             matching_groups = [group]  # Empty files need no hashing.
@@ -321,11 +323,13 @@ def getmatches_by_contents(files, bigsize=0, j=job.nulljob):
                         digest_groups[digest].append(file)
                 matching_groups.extend(digest_group for digest_group in digest_groups.values() if len(digest_group) > 1)
         for matching_group in matching_groups:
+            if all(file.is_ref for file in matching_group):
+                continue  # References only match each other: no pair is reported.
+            matched_file_count += len(matching_group)
             for first, second in itertools.combinations(matching_group, 2):
                 if not (first.is_ref and second.is_ref):
                     result.append(Match(first, second, 100))
-        group_count += 1
-        j.add_progress(desc=PROGRESS_MESSAGE % (len(result), group_count))
+        j.add_progress(desc=PROGRESS_MESSAGE % matched_file_count)
     return result
 
 
