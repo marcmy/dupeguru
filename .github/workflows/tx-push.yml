@@ -16,6 +16,9 @@ env:
 
 jobs:
   push-source:
+    # .tx/config points at the upstream Transifex project; only upstream holds its TX_TOKEN.
+    # Skip in forks instead of failing on every locale/*.pot change.
+    if: github.repository == 'arsenetar/dupeguru'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
