@@ -100,7 +100,27 @@ class Directories:
             return DirectoryState.EXCLUDED
         return DirectoryState.NORMAL
 
-    def _get_files(self, from_path, fileclasses, j):
+    @staticmethod
+    def _first_visit(path, visited):
+        """Records the real folder behind ``path`` in ``visited`` and returns whether it's new.
+
+        A symlink or junction can point back to one of its ancestors (a folder loop) or to a
+        folder that is also reachable through another path. Walking it again would make the scan
+        go around the loop until paths get too long, and yield the same files under different
+        paths, which would then be reported as duplicates of themselves.
+        """
+        key = fs.folder_key(path)
+        if key is None:
+            return True
+        if key in visited:
+            logging.debug("Skipping already visited folder %s", str(path))
+            return False
+        visited.add(key)
+        return True
+
+    def _get_files(self, from_path, fileclasses, j, visited):
+        if not self._first_visit(from_path, visited):
+            return
         try:
             with os.scandir(from_path) as iter:
                 root_path = Path(from_path)
@@ -116,7 +136,7 @@ class Directories:
                         if item.is_dir():
                             if skip_dirs:
                                 continue
-                            yield from self._get_files(item.path, fileclasses, j)
+                            yield from self._get_files(item.path, fileclasses, j, visited)
                             continue
                         elif state == DirectoryState.EXCLUDED:
                             continue
@@ -141,11 +161,13 @@ class Directories:
         except OSError:
             pass
 
-    def _get_folders(self, from_folder, j):
+    def _get_folders(self, from_folder, j, visited):
         j.check_if_cancelled()
+        if not self._first_visit(from_folder.path, visited):
+            return
         try:
             for subfolder in from_folder.subfolders:
-                yield from self._get_folders(subfolder, j)
+                yield from self._get_folders(subfolder, j, visited)
             state = self.get_state(from_folder.path)
             if state != DirectoryState.EXCLUDED:
                 from_folder.is_ref = state == DirectoryState.REFERENCE
@@ -197,8 +219,9 @@ class Directories:
         if fileclasses is None:
             fileclasses = [fs.File]
         file_count = 0
+        visited = set()
         for path in self._dirs:
-            for file in self._get_files(path, fileclasses=fileclasses, j=j):
+            for file in self._get_files(path, fileclasses=fileclasses, j=j, visited=visited):
                 file_count += 1
                 if not isinstance(j, job.NullJob):
                     j.set_progress(-1, tr("Collected {} files to scan").format(file_count))
@@ -212,9 +235,10 @@ class Directories:
         if folderclass is None:
             folderclass = fs.Folder
         folder_count = 0
+        visited = set()
         for path in self._dirs:
             from_folder = folderclass(path)
-            for folder in self._get_folders(from_folder, j):
+            for folder in self._get_folders(from_folder, j, visited):
                 folder_count += 1
                 if not isinstance(j, job.NullJob):
                     j.set_progress(-1, tr("Collected {} folders to scan").format(folder_count))

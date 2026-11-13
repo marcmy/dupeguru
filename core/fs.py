@@ -12,6 +12,7 @@
 # and I'm doing it now.
 
 import os
+import stat
 
 from math import floor
 import logging
@@ -365,6 +366,48 @@ class File:
         return self.path.parent
 
 
+def is_junction(path) -> bool:
+    """Returns whether ``path`` (a :class:`Path` or :class:`os.DirEntry`) is a Windows junction.
+
+    Junctions are directory links that ``is_symlink()`` doesn't report. ``is_junction()`` only
+    exists on Python 3.12+, so fall back on the reparse tag that ``lstat()`` exposes on Windows.
+    """
+    method = getattr(path, "is_junction", None)
+    if method is not None:
+        return method()
+    if platform != "win32":
+        return False
+    try:
+        if isinstance(path, os.DirEntry):
+            st = path.stat(follow_symlinks=False)
+        else:
+            st = os.lstat(path)
+    except OSError:
+        return False
+    return getattr(st, "st_reparse_tag", 0) == stat.IO_REPARSE_TAG_MOUNT_POINT
+
+
+def is_link(path) -> bool:
+    """Returns whether ``path`` (a :class:`Path` or :class:`os.DirEntry`) is a symlink or junction."""
+    return path.is_symlink() or is_junction(path)
+
+
+def folder_key(path):
+    """Returns a key identifying the real folder at ``path``, following links and junctions.
+
+    Two paths reaching the same folder (e.g. through a link) get the same key. Returns ``None`` if
+    ``path`` can't be stat'ed.
+    """
+    try:
+        st = os.stat(path)
+    except (OSError, ValueError):
+        return None
+    if st.st_ino:
+        return (st.st_dev, st.st_ino)
+    # Some filesystems don't provide inode numbers; fall back on the resolved path.
+    return os.path.normcase(os.path.realpath(path))
+
+
 class Folder(File):
     """A wrapper around a folder path.
 
@@ -408,13 +451,13 @@ class Folder(File):
     def subfolders(self):
         if self._subfolders is None:
             with os.scandir(self.path) as iter:
-                subfolders = [p for p in iter if not p.is_symlink() and p.is_dir()]
+                subfolders = [p for p in iter if not is_link(p) and p.is_dir()]
             self._subfolders = [self.__class__(p) for p in subfolders]
         return self._subfolders
 
     @classmethod
     def can_handle(cls, path):
-        return not path.is_symlink() and path.is_dir()
+        return not is_link(path) and path.is_dir()
 
 
 def get_file(path, fileclasses=[File]):
