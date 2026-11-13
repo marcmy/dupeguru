@@ -44,6 +44,16 @@ class InvalidPathError(Exception):
     """The path being added is invalid"""
 
 
+def _path_key(path):
+    # String form that compares like ``Path`` equality (case-insensitive on Windows).
+    return os.path.normcase(str(path))
+
+
+def _is_within(key, ancestor_key):
+    """Whether ``key`` is ``ancestor_key`` or below it. Both come from :func:`_path_key`."""
+    return key == ancestor_key or key.startswith(os.path.join(ancestor_key, ""))
+
+
 class Directories:
     """Holds user folder selection.
 
@@ -170,11 +180,14 @@ class Directories:
         :rtype: list of Path
         """
         try:
-            subpaths = [p for p in path.glob("*") if p.is_dir()]
-            subpaths.sort(key=lambda x: x.name.lower())
-            return subpaths
+            # scandir knows each entry's type from the directory listing, so unlike
+            # glob() + is_dir() it doesn't need a separate stat call for every file.
+            with os.scandir(path) as entries:
+                subpaths = [Path(entry.path) for entry in entries if entry.is_dir()]
         except OSError:
             return []
+        subpaths.sort(key=lambda x: x.name.lower())
+        return subpaths
 
     def get_files(self, fileclasses=None, j=job.nulljob):
         """Returns a list of all files that are not excluded.
@@ -220,12 +233,29 @@ class Directories:
         if state != DirectoryState.NORMAL:
             self.states[path] = state
             return state
-        # find the longest parent path that is in states and return that state if found
+        # Inherit from the nearest parent that has a state, or that is excluded by default (a
+        # hidden folder or one matching an exclusion rule). Default exclusions only apply from the
+        # selected root folder down: a root added inside a hidden folder is still scanned.
         # NOTE: path.parents is ordered longest to shortest
+        root_depth = self._containing_root_depth(path)
+        depth = len(path.parts)
         for parent_path in path.parents:
+            depth -= 1
             if parent_path in self.states:
                 return self.states[parent_path]
+            if (
+                root_depth is not None
+                and depth >= root_depth
+                and self._default_state_for_path(parent_path) == DirectoryState.EXCLUDED
+            ):
+                return DirectoryState.EXCLUDED
         return state
+
+    def _containing_root_depth(self, path):
+        """Number of path parts of the selected root folder containing ``path``, or None."""
+        key = _path_key(path)
+        depths = [len(root.parts) for root in self._dirs if _is_within(key, _path_key(root))]
+        return max(depths, default=None)
 
     def has_any_file(self):
         """Returns whether selected folders contain any file.
@@ -277,6 +307,10 @@ class Directories:
                 root_path_node = ET.SubElement(root, "root_directory")
                 root_path_node.set("path", str(root_path))
             for path, state in self.states.items():
+                if state == DirectoryState.EXCLUDED and self._default_state_for_path(path) == state:
+                    # Only a cached default (hidden folder or exclusion rule match); get_state()
+                    # recomputes it. Saving these made the file grow with every scan.
+                    continue
                 state_node = ET.SubElement(root, "state")
                 state_node.set("path", str(path))
                 state_node.set("value", str(state))
@@ -292,7 +326,11 @@ class Directories:
         """
         if self.get_state(path) == state:
             return
+        # Drop states of subfolders: they now inherit the new state. A string prefix check is
+        # used because ``path in p.parents`` builds every parent of every state, which took
+        # seconds with thousands of deep states.
+        prefix = os.path.join(_path_key(path), "")
         for iter_path in list(self.states.keys()):
-            if path in iter_path.parents:
+            if _path_key(iter_path).startswith(prefix):
                 del self.states[iter_path]
         self.states[path] = state

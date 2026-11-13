@@ -84,6 +84,17 @@ class DirectoriesModel(TreeModel):
     def columnCount(self, parent=QModelIndex()):
         return 2
 
+    def hasChildren(self, parent=QModelIndex()):
+        # Without this, Qt calls rowCount() on every visible folder to decide whether to draw an
+        # expand arrow, which lists the contents of every subfolder of the folder being expanded.
+        # Like QFileSystemModel, assume a folder that was never opened has subfolders; opening an
+        # empty one removes its arrow.
+        if parent.isValid():
+            ref = getattr(parent.internalPointer(), "ref", None)
+            if ref is not None and not getattr(ref, "loaded", True):
+                return True
+        return super().hasChildren(parent)
+
     def data(self, index, role):
         if not index.isValid():
             return None
