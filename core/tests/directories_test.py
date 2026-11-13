@@ -9,6 +9,7 @@ import time
 import tempfile
 import shutil
 
+import pytest
 from pytest import raises
 from pathlib import Path
 from hscommon.testutil import eq_
@@ -562,3 +563,95 @@ class TestExcludeListunion(TestExcludeList):
 class TestExcludeDictunion(TestExcludeList):
     def setup_method(self, method):
         self.d = Directories(exclude_list=ExcludeDict(union_regex=True))
+
+
+LINK_KINDS = ["symlink", "junction"]
+
+
+def make_dir_link(kind, link, target):
+    """Create a directory link at ``link`` pointing to ``target``, or skip the test if this
+    platform/user can't create that kind of link."""
+    if kind == "symlink":
+        try:
+            os.symlink(str(target), str(link), target_is_directory=True)
+        except (OSError, NotImplementedError) as e:
+            pytest.skip(f"cannot create directory symlinks here: {e}")
+    else:
+        if not ISWINDOWS:
+            pytest.skip("junctions only exist on Windows")
+        import _winapi
+
+        _winapi.CreateJunction(str(target), str(link))
+
+
+def create_looped_fs(rootpath, kind):
+    # root/
+    #   top.txt
+    #   a/
+    #     a.txt
+    #     back -> root (a link to an ancestor: a loop)
+    root = rootpath.joinpath("looped")
+    root.joinpath("a").mkdir(parents=True)
+    root.joinpath("top.txt").write_text("top")
+    root.joinpath("a", "a.txt").write_text("a")
+    make_dir_link(kind, root.joinpath("a", "back"), root)
+    return root
+
+
+def real_paths(files):
+    return [os.path.realpath(str(f.path)) for f in files]
+
+
+@pytest.mark.parametrize("kind", LINK_KINDS)
+def test_get_files_does_not_follow_folder_loops(tmpdir, kind):
+    root = create_looped_fs(Path(str(tmpdir)), kind)
+    d = Directories()
+    d.add_path(root)
+    files = list(d.get_files())
+    eq_(sorted(f.name for f in files), ["a.txt", "top.txt"])
+    reals = real_paths(files)
+    eq_(len(reals), len(set(reals)))
+    # The files are reported under their real, non-looped path
+    assert all("back" not in f.path.parts for f in files)
+
+
+@pytest.mark.parametrize("kind", LINK_KINDS)
+def test_get_files_does_not_yield_same_folder_twice_through_link(tmpdir, kind):
+    # root/x/x.txt and root/y/to_x -> root/x: x.txt must only be collected once, otherwise the
+    # same file would be reported as its own duplicate.
+    root = Path(str(tmpdir)).joinpath("root")
+    root.joinpath("x").mkdir(parents=True)
+    root.joinpath("y").mkdir()
+    root.joinpath("x", "x.txt").write_text("x")
+    make_dir_link(kind, root.joinpath("y", "to_x"), root.joinpath("x"))
+    d = Directories()
+    d.add_path(root)
+    files = list(d.get_files())
+    eq_([f.name for f in files], ["x.txt"])
+
+
+@pytest.mark.parametrize("kind", LINK_KINDS)
+def test_get_files_still_follows_links_outside_of_scanned_folders(tmpdir, kind):
+    base = Path(str(tmpdir))
+    root = base.joinpath("root")
+    root.mkdir()
+    other = base.joinpath("other")
+    other.mkdir()
+    other.joinpath("other.txt").write_text("o")
+    make_dir_link(kind, root.joinpath("to_other"), other)
+    d = Directories()
+    d.add_path(root)
+    files = list(d.get_files())
+    eq_([f.name for f in files], ["other.txt"])
+    eq_(files[0].path, root.joinpath("to_other", "other.txt"))
+
+
+@pytest.mark.parametrize("kind", LINK_KINDS)
+def test_get_folders_does_not_follow_folder_loops(tmpdir, kind):
+    root = create_looped_fs(Path(str(tmpdir)), kind)
+    d = Directories()
+    d.add_path(root)
+    folders = list(d.get_folders())
+    eq_(sorted(f.name for f in folders), ["a", "looped"])
+    looped = [f for f in folders if f.name == "looped"][0]
+    eq_(looped.size, len("top") + len("a"))
