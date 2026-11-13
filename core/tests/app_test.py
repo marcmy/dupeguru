@@ -8,13 +8,13 @@ import os
 import os.path as op
 import logging
 import tempfile
+import time
 
 import pytest
 from pathlib import Path
 import hscommon.conflict
 import hscommon.util
 from hscommon.testutil import eq_, log_calls
-from hscommon.jobprogress.job import Job
 
 from core.tests.base import TestApp
 from core.tests.results_test import GetTestGroups
@@ -23,8 +23,20 @@ from core.scanner import ScanType
 
 
 def add_fake_files_to_directories(directories, files):
-    directories.get_files = lambda j=None: iter(files)
+    directories.get_files = lambda fileclasses=None, j=None: iter(files)
     directories._dirs.append("this is just so Scan() doesn't return 3")
+
+
+def run_scan_to_completion(app, timeout=10):
+    # Scans run in a worker thread; wait for it, then pulse like the UI timer does so that
+    # job completion (and its "No duplicates found." message) is handled.
+    app.start_scanning()
+    progress_window = app.progress_window
+    deadline = time.monotonic() + timeout
+    while progress_window.last_progress is not None:
+        assert time.monotonic() < deadline, "scan did not finish"
+        time.sleep(0.01)
+    progress_window.pulse()
 
 
 class TestCaseDupeGuru:
@@ -97,25 +109,45 @@ class TestCaseDupeGuru:
 
         # At some point, any() was used in a wrong way that made Scan() wrongly return 1
         app = TestApp().app
-        f1, f2 = (FakeFile("foo") for _ in range(2))
+        f1, f2 = (FakeFile(Path("foo")) for _ in range(2))
         f1.is_ref, f2.is_ref = (False, False)
         assert not (bool(f1) and bool(f2))
         add_fake_files_to_directories(app.directories, [f1, f2])
-        app.start_scanning()  # no exception
+        run_scan_to_completion(app)  # re-raises any exception from the scan thread
 
     @pytest.mark.skipif("not hasattr(os, 'link')")
     def test_ignore_hardlink_matches(self, tmpdir):
         # If the ignore_hardlink_matches option is set, don't match files hardlinking to the same
         # inode.
         tmppath = Path(str(tmpdir))
-        tmppath.joinpath("myfile").open("wt").write("foo")
+        tmppath.joinpath("myfile").write_text("foo")
         os.link(str(tmppath.joinpath("myfile")), str(tmppath.joinpath("hardlink")))
         app = TestApp().app
         app.directories.add_path(tmppath)
         app.options["scan_type"] = ScanType.CONTENTS
+        # Without the option, the hardlinks match: proves the scan itself works.
+        run_scan_to_completion(app)
+        eq_(len(app.results.groups), 1)
         app.options["ignore_hardlink_matches"] = True
-        app.start_scanning()
+        run_scan_to_completion(app)
         eq_(len(app.results.groups), 0)
+
+    def test_new_scan_clears_results_filter(self, tmpdir):
+        # A new scan recreates the results window with an empty filter box, so a filter typed
+        # against previous results must not silently hide every group of the new scan.
+        tmppath = Path(str(tmpdir))
+        tmppath.joinpath("a.txt").write_text("same")
+        tmppath.joinpath("b.txt").write_text("same")
+        app = TestApp().app
+        app.directories.add_path(tmppath)
+        app.options["scan_type"] = ScanType.CONTENTS
+        run_scan_to_completion(app)
+        eq_(len(app.results.groups), 1)
+        app.apply_filter("no file is named like this")
+        eq_(len(app.results.groups), 0)
+        run_scan_to_completion(app)
+        eq_(len(app.results.groups), 1)
+        assert "No duplicates found." not in app.view.messages
 
     def test_rename_when_nothing_is_selected(self):
         # Issue #140
@@ -395,10 +427,20 @@ class TestCaseDupeGuruWithResults:
         # When doing a scan with results being present prior to the scan, correctly invalidate the
         # results table.
         app = self.app
-        app.JOB = Job(1, lambda *args, **kw: False)  # Cancels the task
+        progress_window = app.progress_window
+
+        def cancel_on_first_progress(*args, **kwargs):
+            progress_window.job_cancelled = True  # what clicking Cancel does
+            return False  # makes the job raise JobCancelled
+
+        progress_window._update_progress = cancel_on_first_progress
         add_fake_files_to_directories(app.directories, self.objects)  # We want the scan to at least start
-        app.start_scanning()  # will be cancelled immediately
+        run_scan_to_completion(app)
         eq_(len(app.result_table), 0)
+        eq_(len(app.results.groups), 0)
+        # A cancelled scan finishes silently: no "No duplicates found." and no results window.
+        eq_(app.view.messages, [])
+        assert not app.view.results_window_shown
 
     def test_selected_dupes_after_removal(self, do_setup):
         # Purge the app's `selected_dupes` attribute when removing dupes, or else it might cause a
