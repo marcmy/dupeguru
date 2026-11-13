@@ -125,7 +125,7 @@ msgid "Collected {} folders to scan"
 msgstr ""
 
 #: core\engine.py:27
-msgid "%d matches found from %d groups"
+msgid "%d matching files found"
 msgstr ""
 
 #: core\gui\deletion_options.py:71

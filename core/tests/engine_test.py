@@ -451,6 +451,14 @@ class TestCaseGetMatches:
         eq_(0, self.log[0])
         eq_(100, self.log[-1])
 
+    def test_progress_counts_matching_files_not_pairs(self):
+        descs = []
+        j = job.Job(1, lambda p, d="": descs.append(d) or True)
+        # 4 files with identical names make 6 matching pairs, but only 4 files.
+        objects = [NamedObject("foo bar") for _ in range(4)] + [NamedObject("unrelated")]
+        eq_(len(getmatches(objects, j=j)), 6)
+        eq_(descs[-1], "4 matching files found")
+
     def test_weight_words(self):
         item_list = [NamedObject("foo bar"), NamedObject("bar bleh")]
         m = getmatches(item_list, weight_words=True)[0]
@@ -533,6 +541,28 @@ class TestCaseGetMatches:
 
 
 class TestCaseGetMatchesByContents:
+    def test_progress_counts_matching_files_not_pairs(self):
+        descs = []
+        j = job.Job(1, lambda p, d="": descs.append(d) or True)
+        # 3 copies of one file and 2 of another: 3 + 1 = 4 pairs, but 5 files.
+        files = [no(name, size=10) for name in ("a", "a", "a", "b", "b", "c")]
+        for f, content in zip(files, ("A", "A", "A", "B", "B", "C")):
+            f.digest_partial = f.digest = content
+        eq_(len(getmatches_by_contents(files, j=j)), 4)
+        eq_(descs[-1], "5 matching files found")
+
+    def test_progress_skips_files_only_matching_other_references(self):
+        descs = []
+        j = job.Job(1, lambda p, d="": descs.append(d) or True)
+        refs = [no("ref1", size=10), no("ref2", size=10)]
+        for f in refs:
+            f.is_ref = True
+        others = [no("x", size=20), no("y", size=20)]
+        for f in refs + others:
+            f.digest_partial = f.digest = f.size
+        getmatches_by_contents(refs + others, j=j)
+        eq_(descs[-1], "2 matching files found")
+
     def test_only_matching_digests_are_paired(self):
         files = [no(str(i), size=10) for i in range(100)]
         files[0].digest_partial = files[1].digest_partial = "same partial"
