@@ -22,6 +22,7 @@ class DupeGuruView:
 
     def __init__(self):
         self.messages = []
+        self.results_window_shown = False
 
     def start_job(self, jobid, func, args=()):
         try:
@@ -43,6 +44,9 @@ class DupeGuruView:
 
     def create_results_window(self):
         pass
+
+    def show_results_window(self):
+        self.results_window_shown = True
 
 
 class ResultTable(ResultTableBase):

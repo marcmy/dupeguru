@@ -802,6 +802,10 @@ class DupeGuru(Broadcaster):
                 setattr(scanner, k, v)
         if self.app_mode == AppMode.PICTURE:
             scanner.cache_path = self._get_picture_cache_path()
+        # The results window is recreated with an empty filter box. A filter applied to previous
+        # results must not carry over, or it would silently hide the new results (and a scan whose
+        # groups all fail that hidden filter would report "No duplicates found.").
+        self.results.apply_filter(None)
         self.results.groups = []
         self._recreate_result_table()
         self._results_changed()
