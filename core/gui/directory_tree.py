@@ -35,6 +35,11 @@ class DirectoryNode(Node):
             self.append(DirectoryNode(self._tree, path, path.name))
         self._loaded = True
 
+    @property
+    def loaded(self):
+        """Whether subfolders were listed. Until then, ``len()`` triggers a disk read."""
+        return self._loaded
+
     def update_all_states(self):
         self._state = STATE_ORDER.index(self._tree.app.directories.get_state(self._directory_path))
         for node in self:

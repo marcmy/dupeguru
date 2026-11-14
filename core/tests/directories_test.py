@@ -217,6 +217,90 @@ def test_get_files_with_inherited_exclusion():
     eq_([], list(d.get_files()))
 
 
+def test_set_state_keeps_states_of_folders_sharing_a_name_prefix():
+    d = Directories()
+    root = Path("/root")
+    d.states[root.joinpath("foo", "sub")] = DirectoryState.REFERENCE
+    d.states[root.joinpath("foobar")] = DirectoryState.REFERENCE
+    d.set_state(root.joinpath("foo"), DirectoryState.EXCLUDED)
+    assert root.joinpath("foo", "sub") not in d.states
+    eq_(d.get_state(root.joinpath("foobar")), DirectoryState.REFERENCE)
+    eq_(d.get_state(root.joinpath("foo", "sub")), DirectoryState.EXCLUDED)
+
+
+def test_set_state_on_a_drive_root_clears_states_below_it():
+    d = Directories()
+    root = Path(Path.cwd().anchor)  # "C:\\" on Windows, "/" elsewhere
+    d.states[root.joinpath("foo", "sub")] = DirectoryState.REFERENCE
+    d.set_state(root, DirectoryState.EXCLUDED)
+    eq_(d.states, {root: DirectoryState.EXCLUDED})
+
+
+def test_set_state_matches_descendants_like_path_equality():
+    # Windows paths compare case-insensitively; descendant clearing must agree with that.
+    d = Directories()
+    d.states[Path("/root/Foo/sub")] = DirectoryState.REFERENCE
+    d.set_state(Path("/root/foo"), DirectoryState.EXCLUDED)
+    eq_(Path("/root/Foo/sub") in d.states, Path("/root/Foo") != Path("/root/foo"))
+
+
+def test_set_state_is_fast_with_many_deep_states():
+    # Folder loops (junctions pointing to an ancestor) can leave thousands of deep states behind.
+    # Changing a single state used to build every parent of every state and took seconds.
+    d = Directories()
+    root = Path("/root")
+    deep = [f"level{k}" for k in range(90)]
+    for i in range(10000):
+        d.states[root.joinpath(f"folder{i}", *deep)] = DirectoryState.EXCLUDED
+    start = time.perf_counter()
+    d.set_state(root.joinpath("folder1"), DirectoryState.REFERENCE)
+    assert time.perf_counter() - start < 0.5
+    eq_(len(d.states), 10000)  # folder1's descendant replaced by folder1 itself
+    eq_(d.states[root.joinpath("folder1")], DirectoryState.REFERENCE)
+
+
+def test_get_subfolders_returns_sorted_directories_only(tmpdir):
+    p = Path(str(tmpdir))
+    for name in ("b", "A", "c"):
+        p.joinpath(name).mkdir()
+    p.joinpath("file.txt").write_text("x")
+    eq_([sub.name for sub in Directories.get_subfolders(p)], ["A", "b", "c"])
+    eq_(Directories.get_subfolders(p.joinpath("missing")), [])
+
+
+def test_save_skips_states_that_only_repeat_the_default_exclusion(tmpdir):
+    p = Path(str(tmpdir))
+    for sub in (".hidden", ".hidden2", "ref"):
+        p.joinpath(sub).mkdir()
+    d1 = Directories()
+    d1.add_path(p)
+    eq_(d1.get_state(p.joinpath(".hidden")), DirectoryState.EXCLUDED)  # cached in states
+    d1.set_state(p.joinpath(".hidden2"), DirectoryState.NORMAL)  # explicit override of default
+    d1.set_state(p.joinpath("ref"), DirectoryState.REFERENCE)
+    tmpxml = str(tmpdir.join("dirs.xml"))
+    d1.save_to_file(tmpxml)
+    saved = open(tmpxml, encoding="utf-8").read()
+    assert ".hidden<" not in saved and '.hidden"' not in saved
+    d2 = Directories()
+    d2.load_from_file(tmpxml)
+    # Ask for the child first: inheriting the default exclusion must not depend on the parent
+    # having been looked up (and cached) before.
+    eq_(d2.get_state(p.joinpath(".hidden", "child")), DirectoryState.EXCLUDED)
+    eq_(d2.get_state(p.joinpath(".hidden")), DirectoryState.EXCLUDED)
+    eq_(d2.get_state(p.joinpath(".hidden2")), DirectoryState.NORMAL)
+    eq_(d2.get_state(p.joinpath("ref")), DirectoryState.REFERENCE)
+
+
+def test_root_inside_a_hidden_folder_is_not_excluded(tmpdir):
+    root = Path(str(tmpdir)).joinpath(".config", "project")
+    root.joinpath("sub").mkdir(parents=True)
+    d = Directories()
+    d.add_path(root)
+    eq_(d.get_state(root), DirectoryState.NORMAL)
+    eq_(d.get_state(root.joinpath("sub")), DirectoryState.NORMAL)
+    eq_(d.get_state(root.joinpath(".cache", "sub")), DirectoryState.EXCLUDED)
+
+
 def test_save_and_load(tmpdir):
     d1 = Directories()
     d2 = Directories()
