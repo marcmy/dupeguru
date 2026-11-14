@@ -14,6 +14,7 @@ import pytest
 from pathlib import Path
 import hscommon.conflict
 import hscommon.util
+from hscommon.jobprogress import job
 from hscommon.testutil import eq_, log_calls
 
 from core.tests.base import TestApp
@@ -156,6 +157,70 @@ class TestCaseDupeGuru:
         dgapp = TestApp().app
         # selected_row is None because there's no result.
         assert not dgapp.result_table.rename_selected("foo")  # no crash
+
+
+@pytest.mark.skipif("not hasattr(os, 'link')")
+class TestCaseDeleteAndLink:
+    # "Link deleted files": each marked duplicate is replaced by a link to its group's reference.
+    @pytest.fixture
+    def do_setup(self, tmpdir):
+        self.folder = Path(str(tmpdir))
+        self.folder.joinpath("a_ref.txt").write_text("same")
+        self.folder.joinpath("b_dupe.txt").write_text("same")
+        self.app = TestApp().app
+        self.app.directories.add_path(self.folder)
+        self.app.options["scan_type"] = ScanType.CONTENTS
+        run_scan_to_completion(self.app)
+        eq_(len(self.app.results.groups), 1)
+        group = self.app.results.groups[0]
+        self.ref_path = str(group.ref.path)
+        self.dupe_path = str(group.dupes[0].path)
+        self.app.results.mark(group.dupes[0])
+
+    def delete_and_link(self, use_hardlinks=True, direct_deletion=True):
+        self.app._do_delete(job.nulljob, True, use_hardlinks, direct_deletion)
+
+    def folder_contents(self):
+        return sorted(p.name for p in self.folder.iterdir())
+
+    def test_duplicate_is_replaced_by_a_hardlink(self, do_setup):
+        self.delete_and_link()
+        eq_(self.app.results.problems, [])
+        assert op.samefile(self.dupe_path, self.ref_path)
+        eq_(self.folder_contents(), ["a_ref.txt", "b_dupe.txt"])  # no temporary link left over
+
+    def test_duplicate_is_kept_when_the_link_cannot_be_created(self, do_setup, monkeypatch):
+        # e.g. the reference is on another drive, or the folder doesn't allow creating files.
+        # Deleting first used to leave the user with neither the file nor a link (issue #243).
+        def failing_link(src, dst):
+            raise PermissionError(13, "Access is denied", dst)
+
+        monkeypatch.setattr(os, "link", failing_link)
+        self.delete_and_link()
+        eq_(len(self.app.results.problems), 1)
+        assert op.exists(self.dupe_path)
+        assert not op.samefile(self.dupe_path, self.ref_path)
+        eq_(self.folder_contents(), ["a_ref.txt", "b_dupe.txt"])
+        eq_(self.app.results.mark_count, 1)  # still marked, so it can be retried
+
+    def test_temporary_link_is_removed_when_deletion_fails(self, do_setup, monkeypatch):
+        def failing_send2trash(path):
+            raise OSError("Could not send to trash")
+
+        monkeypatch.setattr(app, "send2trash", failing_send2trash)
+        self.delete_and_link(direct_deletion=False)
+        eq_(len(self.app.results.problems), 1)
+        assert not op.samefile(self.dupe_path, self.ref_path)
+        eq_(self.folder_contents(), ["a_ref.txt", "b_dupe.txt"])
+
+    def test_existing_file_with_the_temporary_name_is_not_overwritten(self, do_setup):
+        squatter = Path(self.dupe_path + ".dupeguru-link")
+        squatter.write_text("unrelated")
+        self.delete_and_link()
+        eq_(self.app.results.problems, [])
+        assert op.samefile(self.dupe_path, self.ref_path)
+        eq_(squatter.read_text(), "unrelated")
+        eq_(len(self.folder_contents()), 3)
 
 
 class TestCaseDupeGuruCleanEmptyDirs:

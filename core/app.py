@@ -78,6 +78,23 @@ JOBID2TITLE = {
 }
 
 
+def _unused_sibling_path(path, suffix):
+    """A path that doesn't exist yet, in the same folder as ``path``."""
+    candidate = path.with_name(path.name + suffix)
+    counter = 1
+    while op.lexists(str(candidate)):
+        counter += 1
+        candidate = path.with_name(f"{path.name}{suffix}{counter}")
+    return str(candidate)
+
+
+def _remove_quietly(str_path):
+    try:
+        os.remove(str_path)
+    except OSError:
+        logging.warning("Could not remove temporary link %s", str_path)
+
+
 class DupeGuru(Broadcaster):
     """Holds everything together.
 
@@ -236,18 +253,30 @@ class DupeGuru(Broadcaster):
             return
         logging.debug("Sending '%s' to trash", dupe.path)
         str_path = str(dupe.path)
-        if direct_deletion:
-            if op.isdir(str_path):
-                shutil.rmtree(str_path)
-            else:
-                os.remove(str_path)
-        else:
-            send2trash(str_path)  # Raises OSError when there's a problem
+        temp_link = None
         if link_deleted:
-            group = self.results.get_group_of_duplicate(dupe)
-            ref = group.ref
+            # Create the link under a temporary name next to the duplicate *before* deleting it. If
+            # the link can't be made (different drive, protected folder, no permission...), this
+            # raises and the duplicate is left untouched instead of being deleted with nothing to
+            # replace it.
+            ref = self.results.get_group_of_duplicate(dupe).ref
             linkfunc = os.link if use_hardlinks else os.symlink
-            linkfunc(str(ref.path), str_path)
+            temp_link = _unused_sibling_path(dupe.path, ".dupeguru-link")
+            linkfunc(str(ref.path), temp_link)
+        try:
+            if direct_deletion:
+                if op.isdir(str_path):
+                    shutil.rmtree(str_path)
+                else:
+                    os.remove(str_path)
+            else:
+                send2trash(str_path)  # Raises OSError when there's a problem
+        except BaseException:
+            if temp_link is not None:
+                _remove_quietly(temp_link)
+            raise
+        if temp_link is not None:
+            os.rename(temp_link, str_path)
         self.clean_empty_dirs(dupe.path.parent)
 
     def _create_file(self, path):
